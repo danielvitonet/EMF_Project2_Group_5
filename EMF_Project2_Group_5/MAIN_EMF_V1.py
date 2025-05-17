@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May 15 14:54:27 2025
+
+@author: HP
+"""
+
 
 ###############################################################################
 # EMPIRICAL METHODS IN FINANCE 2025
@@ -29,6 +36,7 @@ import seaborn as sns
 from arch import arch_model
 from datetime import datetime
 from scipy.stats import kstest, norm, t, chi2, jarque_bera, gaussian_kde
+from scipy.stats import genextreme
 from scipy.optimize import minimize
 from statsmodels.api import OLS, add_constant
 from statsmodels.tsa.arima.model import ARIMA
@@ -61,7 +69,7 @@ def load_sheet(sheet_name, freq):
     if freq == "weekly":
         df['r_f'] = df['SWISS FRANC S/T DEPO (FT/LSEG DS) - MIDDLE RATE'] / 100 / 52   # annual % -> weekly decimal
     elif freq == "daily":
-        df['r_f'] = df['SWISS FRANC S/T DEPO (FT/LSEG DS) - MIDDLE RATE'] / 100 / 261  # annual % -> daily decimal
+        df['r_f'] = df['SWISS FRANC S/T DEPO (FT/LSEG DS) - MIDDLE RATE'] / 100 / 252  # annual % -> daily decimal
     
     out = df[['DATE','r_s','r_b','r_f']].dropna().set_index('DATE')
     return out
@@ -74,6 +82,18 @@ df_daily  = load_sheet('DAILY',  'daily')
 #print("\n=== Daily data (head) ===")
 #print(df_daily.head())    
 
+def plot_time_series(returns_df, title):
+    plt.figure(figsize=(12,6))
+    for col in returns_df.columns:
+        plt.plot(returns_df.index, returns_df[col], label=col)
+    plt.title(title)
+    plt.xlabel("Date")
+    plt.ylabel("Return")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    
+plot_time_series(df_daily, "Time series returns")
 
 ###############################################################################
 # PART 1: STATIC ALLOCATION
@@ -120,6 +140,8 @@ print(static_weights)
 # -----------------------------------------------------------------------------
 df['ex_s'] = df['r_s'] - df['r_f']      # excess return stock
 df['ex_b'] = df['r_b'] - df['r_f']      # excess return bond
+
+plot_time_series(df, "Time series returns and excess returns")
 
 print("\n= Q2.1: Non-normality & Autocorrelation of excess returns =\n")
 for name in ['ex_s','ex_b']:
@@ -196,7 +218,7 @@ for name in ['ex_s','ex_b']:
     
     # ACF of squared returns
     plt.figure(figsize=(6,2.5))
-    plot_acf(x**2, lags=4, title=f"ACF of {name}")
+    plot_acf(x**2, lags=4, title=f"ACF of {name}^2")
     plt.tight_layout()
     plt.show()
     
@@ -402,7 +424,7 @@ for name, eps in residuals.items():
 
 
 # FATTO IN PIU' PER VEDERE COME CAMBIANO PARAMETRI #
-print("\n=== Q2.3: AR(1)-GARCH(1,1) ===\n")
+print("\n=== Q2.3: AR(1)-GARCH(1,1) - NOT REQUESTED BY THE ASSIGNMENT, IT'S FOR COMPARISON ===\n")
 #garch_res = {}
 for name in ['r_s','r_b']:
     print(f"--- {name} GARCH(1,1) ---")
@@ -490,6 +512,29 @@ plt.show()
 # PART 3: DYNAMIC ALLOCATION
 ###############################################################################
 
+#df=df_weekly
+
+#print("\n=== Q2.2: AR(1) on Simple Returns ===\n")
+ar1_res = {}
+residuals = {}
+for name in ['r_s','r_b']:
+    y = df[name].dropna()
+    X = sm.add_constant(y.shift(1)).dropna()
+    y_aligned = y.loc[X.index]
+    ar1 = sm.OLS(y_aligned, X).fit()
+    ar1_res[name] = ar1
+    #print(f"{name} AR(1) results:\n", ar1.summary(), "\n")
+    residuals[name] = ar1.resid
+
+#print("\n=== Q2.3: GARCH(1,1) on AR(1) Residuals ===\n")
+garch_res = {}
+for name, eps in residuals.items():
+    #print(f"--- {name} GARCH(1,1) ---")
+    model = arch_model(eps, mean='Zero', vol='GARCH', p=1, q=1, dist='normal', rescale=True)
+    # print iteration info every iter, allow up to 1000 its
+    res = model.fit(cov_type='classic', update_freq=10, disp='off', options={'maxiter':1000}) #cov_type='robust'
+    garch_res[name] = res
+
 # --- 1. STATIC WEIGHTS (for comparison) ---
 mu = df[['r_s', 'r_b']].mean().values
 Rf_bar = df['r_f'].mean()
@@ -509,35 +554,46 @@ for lam in [2, 10]:
 a_s, rho_s = ar1_res['r_s'].params
 a_b, rho_b = ar1_res['r_b'].params
 
-mu_s = a_s + rho_s * df['r_s'].shift(1)
-mu_b = a_b + rho_b * df['r_b'].shift(1)
+mu_s = a_s + rho_s * df['r_s'] #.shift(1)  ho tolto lo shift
+mu_b = a_b + rho_b * df['r_b'] #.shift(1)  ho tolto lo shift
+
 
 # Residual correlation (assumed constant)
 eps_s = ar1_res['r_s'].resid        # SMI AR(1) params
 eps_b = ar1_res['r_b'].resid        # SWISS GOVT. BONDS AR(1) params
 rho_sb = eps_s.corr(eps_b)
 
-index_s = eps_s.dropna().index
-index_b = eps_b.dropna().index
+#index_s = eps_s.dropna().index
+#index_b = eps_b.dropna().index
+
+garch_res['SMI'] = garch_res['r_s']
+garch_res['SWISS GOVT. BONDS'] = garch_res['r_b']
 
 # GARCH conditional variance (1-step ahead forecast)
 cond_s = pd.Series(
     garch_res['SMI'].conditional_volatility**2 / garch_res['SMI'].scale**2,
-    index=index_s
+    #index=index_s
 )
 cond_b = pd.Series(
     garch_res['SWISS GOVT. BONDS'].conditional_volatility**2 / garch_res['SWISS GOVT. BONDS'].scale**2,
-    index=index_b
+    #index=index_b
 )
-sigma2_s = cond_s.shift(1)
-sigma2_b = cond_b.shift(1)
+sigma2_s = cond_s.shift(-1) # cambiato da shift(1) a shift(-1) 
+sigma2_b = cond_b.shift(-1) # cambiato da shift(1) a shift(-1) 
 sigma_sb = rho_sb * np.sqrt(sigma2_s) * np.sqrt(sigma2_b)
 
+#df_forecast = pd.concat([
+#    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f']
+#], axis=1, keys=['mu_s', 'mu_b', 'sigma2_s', 'sigma2_b', 'sigma_sb', 'r_f']).dropna()
+
+#- APPORTATTO CORREZIONE: HO MESSO IL "GIUSTO" (almeno credo) Risk-free rate (uso il R_f del giorno in cui calcoliamo l'allocazione per il periodo successivo, prima usavo il R_f del girno in un cui avveniva la nuova allocazione)
 df_forecast = pd.concat([
-    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f']
+    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f'] #.shift(1) # Shift the risk-free rate by one day: use r_f[t - 1] instead of r_f[t]
 ], axis=1, keys=['mu_s', 'mu_b', 'sigma2_s', 'sigma2_b', 'sigma_sb', 'r_f']).dropna()
 
+#rf = df_forecast['r_f'].loc[1]
 
+# NOT REQUESTED BY ASSIGNMENT #
 # PLOT DYNAMIC ANNUALIZED VOLATILITY #
 # Annualize (weekly vol × sqrt(52))
 #vol_stock_ann = garch_res['SMI'].conditional_volatility / garch_res['SMI'].scale  * np.sqrt(52)
@@ -560,6 +616,7 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+##############################
 
 # --- DYNAMIC WEIGHTS COMPUTATION ---
 alphas_dyn = {}
@@ -569,7 +626,8 @@ for lam in [2, 10]:
         μ = df_forecast.loc[t, ['mu_s', 'mu_b']].values
         Σ = np.array([[df_forecast.loc[t, 'sigma2_s'], df_forecast.loc[t, 'sigma_sb']],
                       [df_forecast.loc[t, 'sigma_sb'], df_forecast.loc[t, 'sigma2_b']]])
-        rf = df_forecast.loc[t, 'r_f']
+        #rf = df_forecast['r_f'].shift(1).loc[t] # 'correct' if I did't put shift(1) in df_forecast
+        rf = df_forecast['r_f'].loc[t] # Now correctly lagged - shift put in df_forecast, so here is not necessary anymore
         alpha = np.linalg.inv(Σ).dot(μ - rf * np.ones(2)) / lam
         weights.append(alpha)
     alphas_dyn[lam] = pd.DataFrame(weights, columns=['alpha_s', 'alpha_b'], index=df_forecast.index)
@@ -586,19 +644,40 @@ for lam in [2, 10]:
     }, index=df_forecast.index)
 
 
+
+#df_for_CR_computation = df_weekly.copy()
+#df_for_CR_computation['r_s'].shift(-1)
+#df_for_CR_computation['r_s'].shift(-1)
+
 # --- CUMULATIVE RETURNS ---
 CR, static_CR = {}, {}
 for lam in [2, 10]:
-    w_dyn = alphas_dyn[lam]
+    w_dyn = alphas_dyn[lam].copy()
+    #Rf_dyn = df.loc[w_dyn.index, 'r_f']
+    #Rs = df.loc[w_dyn.index, 'r_s']
+    #Rb = df.loc[w_dyn.index, 'r_b']
+    
     Rf_dyn = df.loc[w_dyn.index, 'r_f']
-    Rs = df.loc[w_dyn.index, 'r_s']
-    Rb = df.loc[w_dyn.index, 'r_b']
+    Rs = df.loc[w_dyn.index, 'r_s'].shift(-1)
+    Rb = df.loc[w_dyn.index, 'r_b'].shift(-1)
+    
+    
+    # ABBASTANZA SICURO CHE NON VADA BENE:
+    #Rp_dyn = (
+    #w_dyn['alpha_s'] * Rs.shift(-1) +
+    #w_dyn['alpha_b'] * Rb.shift(-1) +
+    #w_dyn['alpha_cash'] * Rf_dyn.shift(-1)
+    #)
+    # USIAMO LA SEGUENTE...
     Rp_dyn = w_dyn['alpha_s'] * Rs + w_dyn['alpha_b'] * Rb + w_dyn['alpha_cash'] * Rf_dyn
-    CR[lam] = np.exp(np.log(1 + Rp_dyn).cumsum())
+    #CR[lam] = np.exp(np.log(1 + Rp_dyn).cumsum()) # NON LOGARITMICA
+    CR[lam] = np.log(1 + Rp_dyn).cumsum()          # LOGARITMICA
 
     w_stat = static_weights[lam]
     Rp_stat = w_stat['alpha_s'] * Rs + w_stat['alpha_b'] * Rb + w_stat['alpha_cash'] * Rf_dyn
-    static_CR[lam] = np.exp(np.log(1 + Rp_stat).cumsum())
+    #static_CR[lam] = np.exp(np.log(1 + Rp_stat).cumsum()) # NON LOGARITMICA
+    static_CR[lam] = np.log(1 + Rp_stat).cumsum()          # LOGARITMICA
+    
 
 # --- PLOT WEIGHTS ---
 alphas_dyn[2].index = alphas_dyn[lam].index - pd.Timedelta(weeks=1)
@@ -632,6 +711,11 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
+#delta_s = alphas_dyn[10]['alpha_s'].diff().abs()
+#delta_b = alphas_dyn[10]['alpha_b'].diff().abs()
+#f=1
+#TC = ((delta_s + delta_b) * f).fillna(0)
+
 # --- TRANSACTION COSTS ---
 def compute_transaction_costs(weights_df, f):
     """
@@ -644,15 +728,22 @@ def compute_transaction_costs(weights_df, f):
     return TC.fillna(0)
 
 # Construct transaction cost range
-f_values = np.linspace(0, 0.10, 10000)  # from 0% to 10%
+f_values = np.linspace(0, 0.01, 10000)  # from 0% to 10%
 break_even_f = {}
 
 for lam in [2, 10]:
     # Shift index if not already corrected
-    weights = alphas_dyn[lam]
-    Rs = df['r_s'].shift(-1).loc[weights.index]
-    Rb = df['r_b'].shift(-1).loc[weights.index]
-    Rf_dyn = df['r_f'].shift(-1).loc[weights.index]
+    weights = alphas_dyn[lam].copy()
+    
+    #Rs = df['r_s'].shift(-1).loc[weights.index]
+    #Rb = df['r_b'].shift(-1).loc[weights.index]
+    #Rf_dyn = df['r_f'].shift(-1).loc[weights.index]
+    #Rs = df['r_s'].loc[weights.index]
+    #Rb = df['r_b'].loc[weights.index]
+    #Rf_dyn = df['r_f'].loc[weights.index]
+    Rf_dyn = df.loc[weights.index, 'r_f']
+    Rs = df.loc[weights.index, 'r_s'].shift(-1)
+    Rb = df.loc[weights.index, 'r_b'].shift(-1)
 
     # Dynamic portfolio return
     Rp_dyn = weights['alpha_s'] * Rs + weights['alpha_b'] * Rb + weights['alpha_cash'] * Rf_dyn
@@ -669,20 +760,24 @@ for lam in [2, 10]:
         # Use log returns if explosive
         cum_log_dyn = np.log1p(Rp_dyn_net).cumsum()
         cum_log_stat = np.log1p(Rp_stat).cumsum()
+        
 
-        # Compare final wealth
-        if np.exp(cum_log_dyn.iloc[-1]) <= np.exp(cum_log_stat.iloc[-1]):
+        # Compare final wealth 
+        if cum_log_dyn.iloc[-2] <= cum_log_stat.iloc[-2]:
+        #if np.exp(cum_log_dyn.iloc[-]) <= np.exp(cum_log_stat.iloc[-1]):
             break_even_f[lam] = f
             break
 
 # --- DISPLAY RESULTS ---
 for lam in [2, 10]:
     print(f"Break-even transaction cost rate for λ = {lam}: f = {break_even_f[lam]:.4%}")
-
-
+# NON FIDATEVI DEL Break-even transaction cost rate for λ = 2: f = 0.0510%
+# SPARA QUELLO SOLO PERCHE' E' IL MINIMO CHE HO MESSO. IN REALTA' NON ESISTE
+# PERCHE' E' NEGATIVO GIA' IN PARTENZA
 
 # We want to compare the performance gap vs transaction cost f
-f_values = np.linspace(0, 0.000532, 100)  # from 0% to 10%
+f_values = np.linspace(0, 0.01, 100)  # from 0% to 10%
+
 # Store final cumulative wealths for each f and lambda
 final_wealth_dyn = {2: [], 10: []}
 final_wealth_stat = {}
@@ -690,11 +785,17 @@ final_wealth_stat = {}
 for lam in [2, 10]:
     # Get weights and returns
     weights = alphas_dyn[lam].copy()
-    weights.index = weights.index - pd.Timedelta(weeks=1)  # align to decision date
+    #weights.index = weights.index - pd.Timedelta(weeks=1)  # align to decision date
 
-    Rs = df['r_s'].shift(-1).loc[weights.index]
-    Rb = df['r_b'].shift(-1).loc[weights.index]
-    Rf_dyn = df['r_f'].shift(-1).loc[weights.index]
+    #Rs = df['r_s'].shift(-1).loc[weights.index]
+    #Rb = df['r_b'].shift(-1).loc[weights.index]
+    #Rf_dyn = df['r_f'].shift(-1).loc[weights.index]
+    #Rs = df['r_s'].loc[weights.index]
+    #Rb = df['r_b'].loc[weights.index]
+    #Rf_dyn = df['r_f'].loc[weights.index]
+    Rf_dyn = df.loc[weights.index, 'r_f']
+    Rs = df.loc[weights.index, 'r_s'].shift(-1)
+    Rb = df.loc[weights.index, 'r_b'].shift(-1)
 
     # Dynamic return pre-cost
     Rp_dyn = weights['alpha_s'] * Rs + weights['alpha_b'] * Rb + weights['alpha_cash'] * Rf_dyn
@@ -703,7 +804,8 @@ for lam in [2, 10]:
     w_stat = static_weights[lam]
     Rp_stat = w_stat['alpha_s'] * Rs + w_stat['alpha_b'] * Rb + w_stat['alpha_cash'] * Rf_dyn
     rp_stat = np.log1p(Rp_stat)
-    final_wealth_stat[lam] = np.exp(rp_stat.cumsum().iloc[-1])
+    #final_wealth_stat[lam] = np.exp(rp_stat.cumsum().iloc[-1])
+    final_wealth_stat[lam] = rp_stat.cumsum().iloc[-1]
 
     # Evaluate net wealth for each f
     for f in f_values:
@@ -716,7 +818,8 @@ for lam in [2, 10]:
         #Rp_dyn_net = np.where(Rp_dyn_net <= -1, np.nan, Rp_dyn_net)
         #rp_dyn = np.log1p(Rp_dyn_net)
 
-        final_wealth_dyn[lam].append(np.exp(rp_dyn.cumsum().iloc[-1]))
+        #final_wealth_dyn[lam].append(np.exp(rp_dyn.cumsum().iloc[-1]))
+        final_wealth_dyn[lam].append(rp_dyn.cumsum().iloc[-1])
 
 # Plotting
 plt.figure(figsize=(10, 6))
@@ -734,6 +837,318 @@ plt.tight_layout()
 plt.show()
 
 
+###############################################################################
+# PART 4: COMPUTING THE VaR OF A PORTFOLIO
+###############################################################################
+
+# FAST PART 3 TO QUICKLY COMPUTE PART 4
+###############################################################################
+# PART 3: DYNAMIC ALLOCATION
+###############################################################################
+
+df=df_weekly
+
+print("\n=== Q2.2: AR(1) on Simple Returns ===\n")
+ar1_res = {}
+residuals = {}
+for name in ['r_s','r_b']:
+    y = df[name].dropna()
+    X = sm.add_constant(y.shift(1)).dropna()
+    y_aligned = y.loc[X.index]
+    ar1 = sm.OLS(y_aligned, X).fit()
+    ar1_res[name] = ar1
+    #print(f"{name} AR(1) results:\n", ar1.summary(), "\n")
+    residuals[name] = ar1.resid
+
+print("\n=== Q2.3: GARCH(1,1) on AR(1) Residuals ===\n")
+garch_res = {}
+for name, eps in residuals.items():
+    print(f"--- {name} GARCH(1,1) ---")
+    model = arch_model(eps, mean='Zero', vol='GARCH', p=1, q=1, dist='normal', rescale=True)
+    # print iteration info every iter, allow up to 1000 its
+    res = model.fit(cov_type='classic', update_freq=1, disp='off', options={'maxiter':1000}) #cov_type='robust'
+    garch_res[name] = res
+    #print(res.summary())
+
+garch_res['SMI'] = garch_res['r_s']
+garch_res['SWISS GOVT. BONDS'] = garch_res['r_b']
+
+# --- 1. STATIC WEIGHTS (for comparison) ---
+mu = df[['r_s', 'r_b']].mean().values
+Rf_bar = df['r_f'].mean()
+Sigma = df[['r_s', 'r_b']].cov().values
+
+static_weights = {}
+for lam in [2, 10]:
+    alpha = np.linalg.inv(Sigma).dot(mu - Rf_bar * np.ones(2)) / lam
+    static_weights[lam] = {
+        'alpha_s': alpha[0],
+        'alpha_b': alpha[1],
+        'alpha_cash': 1 - alpha.sum()
+    }
+
+# --- 2. AR(1) FORECASTS AND GARCH CONDITIONAL VARIANCE ---
+# Forecast means μ_{t+1|t} using AR(1)
+a_s, rho_s = ar1_res['r_s'].params
+a_b, rho_b = ar1_res['r_b'].params
+
+mu_s = a_s + rho_s * df['r_s'].shift(1)
+mu_b = a_b + rho_b * df['r_b'].shift(1)
+
+# Residual correlation (assumed constant)
+eps_s = ar1_res['r_s'].resid        # SMI AR(1) params
+eps_b = ar1_res['r_b'].resid        # SWISS GOVT. BONDS AR(1) params
+rho_sb = eps_s.corr(eps_b)
+
+index_s = eps_s.dropna().index
+index_b = eps_b.dropna().index
+
+# GARCH conditional variance (1-step ahead forecast)
+cond_s = pd.Series(
+    garch_res['SMI'].conditional_volatility**2 / garch_res['SMI'].scale**2,
+    #index=index_s
+)
+cond_b = pd.Series(
+    garch_res['SWISS GOVT. BONDS'].conditional_volatility**2 / garch_res['SWISS GOVT. BONDS'].scale**2,
+    #index=index_b
+)
+sigma2_s = cond_s.shift(1)
+sigma2_b = cond_b.shift(1)
+sigma_sb = rho_sb * np.sqrt(sigma2_s) * np.sqrt(sigma2_b)
+
+#df_forecast = pd.concat([
+#    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f']
+#], axis=1, keys=['mu_s', 'mu_b', 'sigma2_s', 'sigma2_b', 'sigma_sb', 'r_f']).dropna()
+
+df_forecast = pd.concat([
+    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f'].shift(-1) # Shift the risk-free rate by one day: use r_f[t - 1] instead of r_f[t]
+], axis=1, keys=['mu_s', 'mu_b', 'sigma2_s', 'sigma2_b', 'sigma_sb', 'r_f']).dropna()
+
+
+
+# --- DYNAMIC WEIGHTS COMPUTATION ---
+alphas_dyn = {}
+for lam in [2, 10]:
+    weights = []
+    for t in df_forecast.index:
+        μ = df_forecast.loc[t, ['mu_s', 'mu_b']].values
+        Σ = np.array([[df_forecast.loc[t, 'sigma2_s'], df_forecast.loc[t, 'sigma_sb']],
+                      [df_forecast.loc[t, 'sigma_sb'], df_forecast.loc[t, 'sigma2_b']]])
+        rf = df_forecast.loc[t, 'r_f']
+        alpha = np.linalg.inv(Σ).dot(μ - rf * np.ones(2)) / lam
+        weights.append(alpha)
+    alphas_dyn[lam] = pd.DataFrame(weights, columns=['alpha_s', 'alpha_b'], index=df_forecast.index)
+    alphas_dyn[lam]['alpha_cash'] = 1 - alphas_dyn[lam].sum(axis=1)
+
+# Create static weight time series
+static_df = {}
+for lam in [2, 10]:
+    w = static_weights[lam]
+    static_df[lam] = pd.DataFrame({
+        'alpha_s': [w['alpha_s']] * len(df_forecast),
+        'alpha_b': [w['alpha_b']] * len(df_forecast),
+        'alpha_cash': [w['alpha_cash']] * len(df_forecast)
+    }, index=df_forecast.index)
+
+
+data_dir = os.path.join(base_dir, "Data")
+output_file = os.path.join(data_dir, "weights_output.xlsx")
+with pd.ExcelWriter(output_file) as writer:
+    alphas_dyn[2].to_excel(writer, sheet_name="dynamic_lambda2")
+    alphas_dyn[10].to_excel(writer, sheet_name="dynamic_lambda10")
+    static_df[2].to_excel(writer, sheet_name="static_lambda2")
+    static_df[10].to_excel(writer, sheet_name="static_lambda10")
+    
+    
+###############################################################################
+# PART 4: COMPUTING THE VaR OF A PORTFOLIO
+###############################################################################
+
+input_file = os.path.join("Data", "weights_output.xlsx")
+weights  = pd.read_excel(input_file, sheet_name=None, parse_dates=['DATE'])
+
+# Prepare weights for static and dynamic
+alphas_dyn = {
+    2: weights['dynamic_lambda2'],
+    10: weights['dynamic_lambda10']
+}
+static_df = {
+    2: weights['static_lambda2'],
+    10: weights['static_lambda10']
+}
+
+for df in alphas_dyn.values():
+    df.set_index("DATE", inplace=True)
+for df in static_df.values():
+    df.set_index("DATE", inplace=True)
+
+
+# Prepare containers for returns and losses
+#Rp = {}   # returns
+Lp = {}   # losses
+
+# Static portfolios: broadcast single weight vector to all days
+for lam, wdf in static_df.items():
+    w = wdf.iloc[0]   # constant α
+    r = ( w.alpha_s   * df_daily["r_s"]
+        + w.alpha_b   * df_daily["r_b"]
+        + w.alpha_cash* df_daily["r_f"] )
+    #Rp[f"static_{lam}"] = r
+    Lp[f"static_{lam}"] = -r
+
+# Dynamic portfolios: expand each weekly weight to its date + next 4 days
+for lam, wdf in alphas_dyn.items():
+    # build an all‐NA daily DataFrame
+    dyn_daily = pd.DataFrame(index=df_daily.index,
+                             columns=["alpha_s","alpha_b","alpha_cash"],
+                             dtype=float)
+    # fill each weekly block
+    for dt, row in wdf.iterrows():
+        pos = df_daily.index.get_loc(dt)
+        days = df_daily.index[pos : pos+5]  # dt + next 4 trading days
+        dyn_daily.loc[days] = row.values
+    # drop leading gaps (before first dt)
+    dyn_daily = dyn_daily.dropna()
+    # compute returns only on filled days
+    r = ( dyn_daily.alpha_s    * df_daily.loc[dyn_daily.index, "r_s"]
+        + dyn_daily.alpha_b    * df_daily.loc[dyn_daily.index, "r_b"]
+        + dyn_daily.alpha_cash * df_daily.loc[dyn_daily.index, "r_f"] )
+    #Rp[f"dynamic_{lam}"] = r
+    Lp[f"dynamic_{lam}"] = -r
+
+# 7) (Optional) bundle into DataFrames
+#df_Rp = pd.DataFrame(Rp)
+df_Lp = pd.DataFrame(Lp)
+
+df_Lp = df_Lp.iloc[14:]  # removes the first 12 rows from all columns
+
+
+# 8) Inspect / save
+#print(df_Lp.head())
+
+# Compute Q4.1 results: deduced quantile θ = 99% and Unconditional VaR
+z_99 = norm.ppf(0.99)  # 99% quantile of standard normal , IS THIS RIGHT??? DUSCUSSION !!!
+results_q41 = {
+    key: {
+        'mean_loss': losses.mean(),
+        'variance_loss': losses.var(),
+        'VaR_99': losses.mean() + z_99 * losses.std()
+    }
+    for key, losses in Lp.items()
+}
+
+#print(results_q41)
+# Convert to DataFrame for pretty display FOR Q4.1
+df_q41 = pd.DataFrame(results_q41).T
+df_q41.index.name = 'Portfolio'
+df_q41.columns = ['Mean Loss', 'Variance of Loss', 'VaR (99%)']
+print(df_q41)
+
+
+
+
+# Q4.2 , Q4.3, Q4.4, Q4.5 :
+
+# PROBLEMS WITH THIS SECTION:
+# - CALCULATIONS OF CONDITIONAL QUARTILE IN Q4.2 AND ITS TEMPORAL EVOLUTION (HOW DO WE COMPUTE IT?)
+# - CALCULATIONS OF QUARTILE IN Q4.5 AND ITS TEMPORAL EVOLUTION (HOW DO WE COMPUTE IT?)
+    
+VaR_99 = {}          # Q4.2 Time evolution of 99% Conditional VaR (GARCH)
+gev_params_dfLp={}   # Q4.3 Parameters (ξ, ϖ, ψ)’ of the GEV 
+q99_results_dfLp={}  # Q4.4 Computed 99% quantile of m_τ distribution and Deduced 99% quantile of z_hat distribution
+VaR_99_GEV_dfLp = {} # Q4.5 Temporal evolution of the 99% GEV VaR 
+
+print("\n=== Q4.2: AR(1)-GARCH(1,1) ===\n")
+garch_res_loss = {}
+for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
+    print(f"--- {name} GARCH(1,1) ---")
+    am = arch_model(df_Lp[name], mean='AR', lags=1, vol='GARCH', p=1, q=1, dist='normal', rescale=True)
+    # print iteration info every iter, allow up to 1000 its
+    res = am.fit(cov_type='classic', update_freq=10, disp='off', options={'maxiter':1000}) # cov_type='robust'
+    #print(res.summary())
+    garch_res_loss[name] = res
+    
+    # Extract scale factor to adjust back to original units
+    scale = res.scale
+
+    # Conditional mean: μ_t = a + ρ * L_{t-1}
+    params = res.params
+    a = params['Const'] /scale # SCALE OR NOT SCALE ???  CHECK CHECK CHECK !!!
+    rho = params[f'{name}[1]']
+    L_lagged = df_Lp[name].shift(1)
+    mu_t = a + rho * L_lagged
+
+    # Conditional standard deviation (scaled back)
+    sigma_t = res.conditional_volatility / np.sqrt(scale)
+
+    # Time-varying 99% 1-day VaR
+    var_series = mu_t + z_99 * sigma_t
+    VaR_99[name] = var_series # Q4.2
+    
+    ####### Q4.3 - Q4.4
+
+    Lp = df_Lp[name]
+    mu = Lp.mean()
+    sigma = Lp.std()
+    z_hat = (Lp - mu) / sigma
+
+    # Step 1: Divide into 60-day blocks and get maxima
+    block_size = 60
+    T = len(z_hat)
+    n_blocks = T // block_size
+    m_tau = [z_hat.iloc[i * block_size:(i + 1) * block_size].max() for i in range(n_blocks)]
+    m_tau = np.array(m_tau)
+
+    # Step 2: Fit GEV distribution #Q4.3
+    shape, loc, scale = genextreme.fit(m_tau)
+    gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
+    
+    # Q4.4
+    # Step 3: Compute 99% quantile of maxima distribution
+    q99_m = genextreme.ppf(0.99, shape, loc=loc, scale=scale)
+    # Step 4: Deduce 99% quantile of z_hat
+    tail_prob = 1 - 0.99**(1/60) # CONTROLLARE FORMULA DALLE SLIDES
+    q99_z_hat = np.quantile(z_hat, 1 - tail_prob)
+    #gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
+    q99_results_dfLp[name] = {'99% quantile of maxima m_τ': q99_m, '99% quantile of z_hat': q99_z_hat}
+
+    ### Q4.5 CREDO SIA IL 4.5, CONTROLLARE!!! 
+    VaR_99_GEV = mu_t + q99_z_hat * sigma_t
+    VaR_99_GEV.name = f'VaR_99_GEV_{name}'
+    VaR_99_GEV_dfLp[name] = VaR_99_GEV
+
+    # Return the head of the series
+    #VaR_99_GEV.head()
+
+# Convert each dictionary to a nicely formatted DataFrame for display
+gev_params_df = pd.DataFrame(gev_params_dfLp).T
+q99_results_df = pd.DataFrame(q99_results_dfLp).T
+var_99_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99.items()}).T[['mean', 'std', 'min', 'max']]
+var_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99_GEV_dfLp.items()}).T[['mean', 'std', 'min', 'max']]
+
+
+
+
+# Setup for consistent visuals
+sns.set(style="whitegrid")
+plt.rcParams['figure.figsize'] = (14, 6)
+
+# Plot VaR evolution (Q4.2 and Q4.5)
+fig, ax = plt.subplots()
+for name in ['static_2', 'static_10', 'dynamic_2', 'dynamic_10']:
+    if name in VaR_99 and name in VaR_99_GEV_dfLp:
+        ax.plot(VaR_99[name], label=f'VaR-GARCH {name}', linestyle='--')
+        ax.plot(VaR_99_GEV_dfLp[name], label=f'VaR-GEV {name}', alpha=0.8)
+ax.set_title("Q4.2 & Q4.5: Temporal Evolution of 99% VaR (GARCH vs GEV)")
+ax.set_ylabel("VaR")
+ax.set_xlabel("Date")
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+# Tables for Q4.3 & Q4.4 (GEV parameters and quantiles)
+gev_table = pd.DataFrame(gev_params_dfLp).T
+quantile_table = pd.DataFrame(q99_results_dfLp).T
 
 
 
@@ -742,23 +1157,48 @@ plt.show()
 
 
 
+#plt.figure(figsize=(12, 6))
+#for name in ['static_2', 'static_10', 'dynamic_2', 'dynamic_10']:
+#    plt.plot(df_Lp[f'VaR_99_{name}'], label=f'VaR 99% - {name}')
+#
+#plt.title('Time Evolution of Conditional 99% VaR (AR(1)-GARCH(1,1))')
+#plt.xlabel('Date')
+#plt.ylabel('VaR')
+#plt.legend()
+#plt.grid(True)
+#plt.tight_layout()
+#plt.show()
 
+#from scipy.stats import genextreme
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#gev_params_dfLp={} 
+#q99_results_dfLp={}
+#for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
+#    Lp = df_Lp[name]
+#    mu = Lp.mean()
+#    sigma = Lp.std()
+#    z_hat = (Lp - mu) / sigma
+#
+#    # Step 1: Divide into 60-day blocks and get maxima
+#    block_size = 60
+#    T = len(z_hat)
+#    n_blocks = T // block_size
+#    m_tau = [z_hat.iloc[i * block_size:(i + 1) * block_size].max() for i in range(n_blocks)]
+#    m_tau = np.array(m_tau)
+#
+#    # Step 2: Fit GEV distribution
+#    shape, loc, scale = genextreme.fit(m_tau)
+#
+#    # Step 3: Compute 99% quantile of maxima distribution
+#    q99_m = genextreme.ppf(0.99, shape, loc=loc, scale=scale)
+#
+#    # Step 4: Deduce 99% quantile of z_hat
+#    tail_prob = 1 - 0.99**(1/60) # CONTROLLARE FORMULA DALLE SLIDES
+#    q99_z_hat = np.quantile(z_hat, 1 - tail_prob)
+#
+#    gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
+#    q99_results_dfLp[name] = {'99% quantile of maxima m_τ': q99_m, '99% quantile of z_hat': q99_z_hat}
+#
+#    #gev_params_dfLp, q99_results_dfLp
 
 
