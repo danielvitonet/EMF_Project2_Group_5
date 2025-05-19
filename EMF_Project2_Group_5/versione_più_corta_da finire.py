@@ -151,6 +151,12 @@ for name in ['ex_s','ex_b']:
     ks_stat, ks_p = kstest(z, 'norm')
     print(f"{name}: K-S p={ks_p:.3f} {'(reject N₀)' if ks_p<0.05 else '(no rej)'}")
     
+    s = x**2
+    # Kolmogorov-Smirnov vs. N(0,1)
+    z = (s - s.mean())/s.std(ddof=0)
+    ks_stat, ks_p = kstest(z, 'norm')
+    print(f"{name}^2: K-S p={ks_p:.3f} {'(reject N₀)' if ks_p<0.05 else '(no rej)'}")
+    
     print(f"\n= Lilliefors test on {name} =\n")
     # Lilliefors test for Normal(μ,σ²)
     stat, pval = lilliefors(x, dist='norm')
@@ -510,7 +516,7 @@ plt.show()
 # PART 3: DYNAMIC ALLOCATION
 ###############################################################################
 
-#df=df_weekly.copy()
+df=df_weekly.copy()
 
 #print("\n=== Q2.2: AR(1) on Simple Returns ===\n")
 ar1_res = {}
@@ -704,6 +710,129 @@ fig.suptitle("Dynamic vs Static Portfolio Weights (λ = 2 and 10)")
 plt.tight_layout()
 plt.show()
 
+
+import matplotlib.pyplot as plt
+
+# extract the two static weight vectors (α˜* for λ=2 and λ=10)
+w2  = static_df[2].iloc[0]
+w10 = static_df[10].iloc[0]
+
+fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+labels = ['Stock Weight', 'Bond Weight', 'Cash Weight']
+colors_dyn = {2:'blue', 10:'green'}
+colors_stat = {2:'red', 10:'orange'}
+
+for i, name in enumerate(['alpha_s', 'alpha_b', 'alpha_cash']):
+    # plot dynamic weights
+    for lam in [2,10]:
+        axs[i].plot(alphas_dyn[lam].index,
+                    alphas_dyn[lam][name],
+                    label=f'λ={lam} (dynamic)',
+                    color=colors_dyn[lam])
+    
+    # add horizontal lines for the static weights
+    axs[i].axhline(w2[name],  linestyle='--',
+                   color=colors_stat[2],
+                   label='λ=2 (static)')
+    axs[i].axhline(w10[name], linestyle='--',
+                   color=colors_stat[10],
+                   label='λ=10 (static)')
+    
+    axs[i].set_ylabel(labels[i])
+    axs[i].grid(True)
+
+axs[2].set_xlabel("Date")
+axs[0].legend(ncol=2, loc='upper left')
+fig.suptitle("Dynamic vs Static Portfolio Weights (λ = 2 and 10)")
+plt.tight_layout()
+plt.show()
+
+import matplotlib.pyplot as plt
+from matplotlib.colors import to_rgb
+
+# mapping from column → human label
+labels = {
+    "alpha_s":    "Stock",
+    "alpha_b":    "Bond",
+    "alpha_cash": "Cash"
+}
+
+# choose a base (light) color for each leg
+base_colors = {
+    "alpha_s":    "tab:blue",
+    "alpha_b":    "tab:orange",
+    "alpha_cash": "tab:green"
+}
+
+for lam in [2, 10]:
+    w_stat = static_df[lam].iloc[0]    # constant static weights
+    dyn    = alphas_dyn[lam]           # dynamic weights DataFrame
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for col in ["alpha_s","alpha_b","alpha_cash"]:
+        # get base RGB and a darker variant
+        base_rgb = to_rgb(base_colors[col])
+        dark_rgb = tuple(0.6 * c for c in base_rgb)
+
+        # plot dynamic (dashed, thin, darker)
+        ax.plot(
+            dyn.index, dyn[col],
+            #linestyle="--",
+            linewidth=1,
+            color=base_rgb,
+            label=f"{labels[col]} (dynamic)"
+        )
+
+        # plot static (solid, thick, base color)
+        ax.axhline(
+            w_stat[col],
+            linewidth=2.5,
+            color=base_rgb,
+            label=f"{labels[col]} (static)"
+        )
+
+    ax.set_title(f"Dynamic vs Static Allocation (λ = {lam})")
+    ax.set_ylabel("Weight (1 = 100%)")
+    ax.set_xlabel("Date")
+    ax.grid(True)
+    ax.legend(ncol=3, loc="upper left", framealpha=0.9)
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+
+for lam in [2, 10]:
+    # pull out the constant static vector
+    w_stat = static_df[lam].iloc[0]
+    # dynamic DataFrame
+    dyn = alphas_dyn[lam]
+
+    fig, ax = plt.subplots(figsize=(12, 4))
+    # plot dynamic weights (dashed)
+    ax.plot(dyn.index, dyn['alpha_s'], '--', label='Stock (dynamic)',  color='C0')
+    ax.plot(dyn.index, dyn['alpha_b'], '--', label='Bond (dynamic)',   color='C1')
+    ax.plot(dyn.index, dyn['alpha_cash'], '--', label='Cash (dynamic)', color='C2')
+
+    # plot static horizontals (solid)
+    ax.axhline(w_stat['alpha_s'],   color='C0', label='Stock (static)')
+    ax.axhline(w_stat['alpha_b'],   color='C1', label='Bond (static)')
+    ax.axhline(w_stat['alpha_cash'],color='C2', label='Cash (static)')
+
+    ax.set_title(f"Dynamic vs Static Allocation (λ = {lam})")
+    ax.set_ylabel("Weight")
+    ax.set_xlabel("Date")
+    ax.legend(ncol=3, loc='upper left')
+    ax.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
 # --- PLOT CUMULATIVE RETURNS ---
 plt.figure(figsize=(12, 6))
 plt.plot(CR[2], label='λ = 2 (dynamic)', color='blue')
@@ -895,9 +1024,15 @@ for lam, wdf in alphas_dyn.items():
     # drop leading gaps (before first dt)
     dyn_daily = dyn_daily.dropna()
     # compute returns only on filled days
-    r = ( dyn_daily.alpha_s    * df_daily.loc[dyn_daily.index, "r_s"]
-        + dyn_daily.alpha_b    * df_daily.loc[dyn_daily.index, "r_b"]
-        + dyn_daily.alpha_cash * df_daily.loc[dyn_daily.index, "r_f"] )
+    r = ( dyn_daily.alpha_s    * df_daily.loc[dyn_daily.index, "r_s"].shift(-5)
+        + dyn_daily.alpha_b    * df_daily.loc[dyn_daily.index, "r_b"].shift(-5)
+        + dyn_daily.alpha_cash * df_daily.loc[dyn_daily.index, "r_f"].shift(-5) ) # ADDED .shift(-1)
+    
+    #r = ( dyn_daily.alpha_s    * df_daily.loc[dyn_daily.index, "r_s"]
+    #    + dyn_daily.alpha_b    * df_daily.loc[dyn_daily.index, "r_b"]
+    #    + dyn_daily.alpha_cash * df_daily.loc[dyn_daily.index, "r_f"] )
+    
+    
     #Rp[f"dynamic_{lam}"] = r
     Lp[f"dynamic_{lam}"] = -r
 
@@ -905,8 +1040,8 @@ for lam, wdf in alphas_dyn.items():
 #df_Rp = pd.DataFrame(Rp)
 df_Lp = pd.DataFrame(Lp)
 
-df_Lp = df_Lp.iloc[14:]  # removes the first 12 rows from all columns
-
+#df_Lp = df_Lp.iloc[9:]  # removes the first 12 rows from all columns
+df_Lp = df_Lp.dropna()
 
 # 8) Inspect / save
 #print(df_Lp.head())
@@ -927,6 +1062,7 @@ results_q41 = {
 df_q41 = pd.DataFrame(results_q41).T
 df_q41.index.name = 'Portfolio'
 df_q41.columns = ['Mean Loss', 'Variance of Loss', 'VaR (99%)']
+print("\n=== Q4.1: estimated UNCONDITIONAL: Mean, Variance, and VaR (99%) ===\n")
 print(df_q41)
 
 
@@ -1011,31 +1147,114 @@ q99_results_df = pd.DataFrame(q99_results_dfLp).T
 var_99_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99.items()}).T[['mean', 'std', 'min', 'max']]
 var_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99_GEV_dfLp.items()}).T[['mean', 'std', 'min', 'max']]
 
+print("\n=== Q4.2: Time evolution of 99% Conditional (GARCH) VaR - look plot ===\n")
+print(var_99_summary)
+# Tables for Q4.3 & Q4.4 (GEV parameters and quantiles)
+print("\n=== Q4.3: GEV parameters ===\n")
+print(gev_params_df)
+print("\n=== Q4.4: GEV quantiles ===\n")
+print(q99_results_df)
+
+print("\n=== Q4.5: Time evolution of 99% GEV VaR - look plot ===\n")
+print(var_99_gev_summary)
 
 
 
-# Setup for consistent visuals
-sns.set(style="whitegrid")
-plt.rcParams['figure.figsize'] = (14, 6)
+import matplotlib.pyplot as plt
 
-# Plot VaR evolution (Q4.2 and Q4.5)
-fig, ax = plt.subplots()
-for name in ['static_2', 'static_10', 'dynamic_2', 'dynamic_10']:
-    if name in VaR_99 and name in VaR_99_GEV_dfLp:
-        ax.plot(VaR_99[name], label=f'VaR-GARCH {name}', linestyle='--')
-        ax.plot(VaR_99_GEV_dfLp[name], label=f'VaR-GEV {name}', alpha=0.8)
-ax.set_title("Q4.2 & Q4.5: Temporal Evolution of 99% VaR (GARCH vs GEV)")
-ax.set_ylabel("VaR")
-ax.set_xlabel("Date")
-ax.legend()
+# Setup
+plt.style.use('seaborn-v0_8-whitegrid')
+plt.rcParams["figure.figsize"] = (14, 6)
+
+# Dictionary for clean labels
+labels = {
+    'static_2': 'Static (λ=2)',
+    'dynamic_2': 'Dynamic (λ=2)',
+    'static_10': 'Static (λ=10)',
+    'dynamic_10': 'Dynamic (λ=10)',
+}
+
+# Plot 1: GARCH VaR for λ=2
+plt.figure()
+plt.plot(VaR_99['static_2'], label='Static (λ=2)')
+plt.plot(VaR_99['dynamic_2'], label='Dynamic (λ=2)')
+plt.title('Temporal Evolution of 99% VaR (GARCH) - λ=2')
+plt.xlabel('Date')
+plt.ylabel('VaR')
+plt.legend()
 plt.tight_layout()
 plt.show()
 
-# Tables for Q4.3 & Q4.4 (GEV parameters and quantiles)
-gev_table = pd.DataFrame(gev_params_dfLp).T
-quantile_table = pd.DataFrame(q99_results_dfLp).T
+# Plot 2: GARCH VaR for λ=10
+plt.figure()
+plt.plot(VaR_99['static_10'], label='Static (λ=10)')
+plt.plot(VaR_99['dynamic_10'], label='Dynamic (λ=10)')
+plt.title('Temporal Evolution of 99% VaR (GARCH) - λ=10')
+plt.xlabel('Date')
+plt.ylabel('VaR')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Plot 3: GEV VaR for λ=2
+plt.figure()
+plt.plot(VaR_99_GEV_dfLp['static_2'], label='Static (λ=2)')
+plt.plot(VaR_99_GEV_dfLp['dynamic_2'], label='Dynamic (λ=2)')
+plt.title('Temporal Evolution of 99% VaR (GEV) - λ=2')
+plt.xlabel('Date')
+plt.ylabel('VaR')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Plot 4: GEV VaR for λ=10
+plt.figure()
+plt.plot(VaR_99_GEV_dfLp['static_10'], label='Static (λ=10)')
+plt.plot(VaR_99_GEV_dfLp['dynamic_10'], label='Dynamic (λ=10)')
+plt.title('Temporal Evolution of 99% VaR (GEV) - λ=10')
+plt.xlabel('Date')
+plt.ylabel('VaR')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Setup for consistent visuals
+#sns.set(style="whitegrid")
+#plt.rcParams['figure.figsize'] = (14, 6)
+
+# Plot VaR evolution (Q4.2 and Q4.5)
+#fig, ax = plt.subplots()
+#for name in ['static_2', 'static_10', 'dynamic_2', 'dynamic_10']:
+#    if name in VaR_99 and name in VaR_99_GEV_dfLp:
+#        ax.plot(VaR_99[name], label=f'VaR-GARCH {name}', linestyle='--')
+#        ax.plot(VaR_99_GEV_dfLp[name], label=f'VaR-GEV {name}', alpha=0.8)
+#ax.set_title("Q4.2 & Q4.5: Temporal Evolution of 99% VaR (GARCH vs GEV)")
+#ax.set_ylabel("VaR")
+#ax.set_xlabel("Date")
+#ax.legend()
+#plt.tight_layout()
+#plt.show()
 
 
+#import matplotlib.pyplot as plt
+#import seaborn as sns
+
+## Setup for consistent visuals
+#sns.set(style="whitegrid")
+#plt.rcParams['figure.figsize'] = (14, 6)
+
+# Plot separate graphs for each portfolio's VaR (GARCH vs GEV)
+#for name in ['static_2', 'static_10', 'dynamic_2', 'dynamic_10']:
+#    if name in VaR_99 and name in VaR_99_GEV_dfLp:
+#        plt.figure()        
+#        plt.plot(VaR_99_GEV_dfLp[name], label='VaR-GEV', alpha=0.8)
+#        plt.plot(VaR_99[name], label='VaR-GARCH') #, linestyle='--'
+#        plt.title(f"Q4.2 & Q4.5: 99% VaR Evolution for {name}")
+#        plt.ylabel("VaR")
+#        plt.xlabel("Date")
+#        plt.legend()
+#        plt.tight_layout()
+#        plt.show()
 
 
 
