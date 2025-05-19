@@ -145,17 +145,19 @@ print("\n= Q2.1: Non-normality & Autocorrelation of excess returns =\n")
 for name in ['ex_s','ex_b']:
     x = df[name].dropna()
     
+    print(f"\n= Kolmogorov-Smirnov test on {name}² =\n")
+    s = x**2
+    # Kolmogorov-Smirnov vs. N(0,1)
+    z = (s - s.mean())/s.std(ddof=0)
+    ks_stat, ks_p = kstest(z, 'norm')
+    print(f"{name}²: K-S p={ks_p:.3f} {'(reject N₀)' if ks_p<0.05 else '(no rej)'}")
+    
     print(f"\n= Kolmogorov-Smirnov test on {name} =\n")
     # Kolmogorov-Smirnov vs. N(0,1)
     z = (x - x.mean())/x.std(ddof=0)
     ks_stat, ks_p = kstest(z, 'norm')
     print(f"{name}: K-S p={ks_p:.3f} {'(reject N₀)' if ks_p<0.05 else '(no rej)'}")
     
-    s = x**2
-    # Kolmogorov-Smirnov vs. N(0,1)
-    z = (s - s.mean())/s.std(ddof=0)
-    ks_stat, ks_p = kstest(z, 'norm')
-    print(f"{name}^2: K-S p={ks_p:.3f} {'(reject N₀)' if ks_p<0.05 else '(no rej)'}")
     
     print(f"\n= Lilliefors test on {name} =\n")
     # Lilliefors test for Normal(μ,σ²)
@@ -695,57 +697,20 @@ for lam in [2, 10]:
 # --- PLOT WEIGHTS ---
 #alphas_dyn[2].index = alphas_dyn[lam].index - pd.Timedelta(weeks=1)
 #alphas_dyn[10].index = alphas_dyn[lam].index - pd.Timedelta(weeks=1)
-fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-labels = ['Stock Weight', 'Bond Weight', 'Cash Weight']
-for i, name in enumerate(['alpha_s', 'alpha_b', 'alpha_cash']):
-    axs[i].plot(alphas_dyn[2].index, alphas_dyn[2][name], label='λ=2 (dynamic)', color='blue')
-    axs[i].plot(alphas_dyn[10].index, alphas_dyn[10][name], label='λ=10 (dynamic)', color='green')
-    axs[i].plot(static_df[2].index, static_df[2][name], '--', label='λ=2 (static)', color='red', alpha=0.6)
-    axs[i].plot(static_df[10].index, static_df[10][name], '--', label='λ=10 (static)', color='orange', alpha=0.6)
-    axs[i].set_ylabel(labels[i])
-    axs[i].grid(True)
-axs[2].set_xlabel("Date")
-axs[0].legend(ncol=2)
-fig.suptitle("Dynamic vs Static Portfolio Weights (λ = 2 and 10)")
-plt.tight_layout()
-plt.show()
-
-
-import matplotlib.pyplot as plt
-
-# extract the two static weight vectors (α˜* for λ=2 and λ=10)
-w2  = static_df[2].iloc[0]
-w10 = static_df[10].iloc[0]
-
-fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-labels = ['Stock Weight', 'Bond Weight', 'Cash Weight']
-colors_dyn = {2:'blue', 10:'green'}
-colors_stat = {2:'red', 10:'orange'}
-
-for i, name in enumerate(['alpha_s', 'alpha_b', 'alpha_cash']):
-    # plot dynamic weights
-    for lam in [2,10]:
-        axs[i].plot(alphas_dyn[lam].index,
-                    alphas_dyn[lam][name],
-                    label=f'λ={lam} (dynamic)',
-                    color=colors_dyn[lam])
-    
-    # add horizontal lines for the static weights
-    axs[i].axhline(w2[name],  linestyle='--',
-                   color=colors_stat[2],
-                   label='λ=2 (static)')
-    axs[i].axhline(w10[name], linestyle='--',
-                   color=colors_stat[10],
-                   label='λ=10 (static)')
-    
-    axs[i].set_ylabel(labels[i])
-    axs[i].grid(True)
-
-axs[2].set_xlabel("Date")
-axs[0].legend(ncol=2, loc='upper left')
-fig.suptitle("Dynamic vs Static Portfolio Weights (λ = 2 and 10)")
-plt.tight_layout()
-plt.show()
+#fig, axs = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+#labels = ['Stock Weight', 'Bond Weight', 'Cash Weight']
+#for i, name in enumerate(['alpha_s', 'alpha_b', 'alpha_cash']):
+#    axs[i].plot(alphas_dyn[2].index, alphas_dyn[2][name], label='λ=2 (dynamic)', color='blue')
+#    axs[i].plot(alphas_dyn[10].index, alphas_dyn[10][name], label='λ=10 (dynamic)', color='green')
+#    axs[i].plot(static_df[2].index, static_df[2][name], '--', label='λ=2 (static)', color='red', alpha=0.6)
+#    axs[i].plot(static_df[10].index, static_df[10][name], '--', label='λ=10 (static)', color='orange', alpha=0.6)
+#    axs[i].set_ylabel(labels[i])
+#    axs[i].grid(True)
+#axs[2].set_xlabel("Date")
+#axs[0].legend(ncol=2)
+#fig.suptitle("Dynamic vs Static Portfolio Weights (λ = 2 and 10)")
+#plt.tight_layout()
+#plt.show()
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import to_rgb
@@ -798,10 +763,6 @@ for lam in [2, 10]:
     ax.legend(ncol=3, loc="upper left", framealpha=0.9)
     plt.tight_layout()
     plt.show()
-
-
-
-
 
 
 
