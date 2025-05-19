@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu May 15 14:54:27 2025
+Created on Sat May 17 20:01:43 2025
 
 @author: HP
 """
-
-
 ###############################################################################
 # EMPIRICAL METHODS IN FINANCE 2025
 # =============================================================================
@@ -846,128 +844,6 @@ plt.tight_layout()
 plt.show()
 
 
-###############################################################################
-# PART 4: COMPUTING THE VaR OF A PORTFOLIO
-###############################################################################
-
-# FAST PART 3 TO QUICKLY COMPUTE PART 4
-###############################################################################
-# PART 3: DYNAMIC ALLOCATION
-###############################################################################
-
-#df=df_weekly.copy()
-
-#print("\n=== Q2.2: AR(1) on Simple Returns ===\n")
-ar1_res = {}
-residuals = {}
-for name in ['r_s','r_b']:
-    y = df[name].dropna()
-    X = sm.add_constant(y.shift(1)).dropna()
-    y_aligned = y.loc[X.index]
-    ar1 = sm.OLS(y_aligned, X).fit()
-    ar1_res[name] = ar1
-    #print(f"{name} AR(1) results:\n", ar1.summary(), "\n")
-    residuals[name] = ar1.resid
-
-#print("\n=== Q2.3: GARCH(1,1) on AR(1) Residuals ===\n")
-garch_res = {}
-for name, eps in residuals.items():
-    #print(f"--- {name} GARCH(1,1) ---")
-    model = arch_model(eps, mean='Zero', vol='GARCH', p=1, q=1, dist='normal', rescale=True)
-    # print iteration info every iter, allow up to 1000 its
-    res = model.fit(cov_type='classic', update_freq=1, disp='off', options={'maxiter':1000}) #cov_type='robust'
-    garch_res[name] = res
-    #print(res.summary())
-
-garch_res['SMI'] = garch_res['r_s']
-garch_res['SWISS GOVT. BONDS'] = garch_res['r_b']
-
-# --- 1. STATIC WEIGHTS (for comparison) ---
-mu = df[['r_s', 'r_b']].mean().values
-Rf_bar = df['r_f'].mean()
-Sigma = df[['r_s', 'r_b']].cov().values
-
-static_weights = {}
-for lam in [2, 10]:
-    alpha = np.linalg.inv(Sigma).dot(mu - Rf_bar * np.ones(2)) / lam
-    static_weights[lam] = {
-        'alpha_s': alpha[0],
-        'alpha_b': alpha[1],
-        'alpha_cash': 1 - alpha.sum()
-    }
-
-# --- 2. AR(1) FORECASTS AND GARCH CONDITIONAL VARIANCE ---
-# Forecast means μ_{t+1|t} using AR(1)
-a_s, rho_s = ar1_res['r_s'].params
-a_b, rho_b = ar1_res['r_b'].params
-
-mu_s = a_s + rho_s * df['r_s'].shift(1)
-mu_b = a_b + rho_b * df['r_b'].shift(1)
-
-# Residual correlation (assumed constant)
-eps_s = ar1_res['r_s'].resid        # SMI AR(1) params
-eps_b = ar1_res['r_b'].resid        # SWISS GOVT. BONDS AR(1) params
-rho_sb = eps_s.corr(eps_b)
-
-index_s = eps_s.dropna().index
-index_b = eps_b.dropna().index
-
-# GARCH conditional variance (1-step ahead forecast)
-cond_s = pd.Series(
-    garch_res['SMI'].conditional_volatility**2 / garch_res['SMI'].scale**2,
-    #index=index_s
-)
-cond_b = pd.Series(
-    garch_res['SWISS GOVT. BONDS'].conditional_volatility**2 / garch_res['SWISS GOVT. BONDS'].scale**2,
-    #index=index_b
-)
-sigma2_s = cond_s.shift(1)
-sigma2_b = cond_b.shift(1)
-sigma_sb = rho_sb * np.sqrt(sigma2_s) * np.sqrt(sigma2_b)
-
-#df_forecast = pd.concat([
-#    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f']
-#], axis=1, keys=['mu_s', 'mu_b', 'sigma2_s', 'sigma2_b', 'sigma_sb', 'r_f']).dropna()
-
-df_forecast = pd.concat([
-    mu_s, mu_b, sigma2_s, sigma2_b, sigma_sb, df['r_f'].shift(-1) # Shift the risk-free rate by one day: use r_f[t - 1] instead of r_f[t]
-], axis=1, keys=['mu_s', 'mu_b', 'sigma2_s', 'sigma2_b', 'sigma_sb', 'r_f']).dropna()
-
-
-
-# --- DYNAMIC WEIGHTS COMPUTATION ---
-alphas_dyn = {}
-for lam in [2, 10]:
-    weights = []
-    for t in df_forecast.index:
-        μ = df_forecast.loc[t, ['mu_s', 'mu_b']].values
-        Σ = np.array([[df_forecast.loc[t, 'sigma2_s'], df_forecast.loc[t, 'sigma_sb']],
-                      [df_forecast.loc[t, 'sigma_sb'], df_forecast.loc[t, 'sigma2_b']]])
-        rf = df_forecast.loc[t, 'r_f']
-        alpha = np.linalg.inv(Σ).dot(μ - rf * np.ones(2)) / lam
-        weights.append(alpha)
-    alphas_dyn[lam] = pd.DataFrame(weights, columns=['alpha_s', 'alpha_b'], index=df_forecast.index)
-    alphas_dyn[lam]['alpha_cash'] = 1 - alphas_dyn[lam].sum(axis=1)
-
-# Create static weight time series
-static_df = {}
-for lam in [2, 10]:
-    w = static_weights[lam]
-    static_df[lam] = pd.DataFrame({
-        'alpha_s': [w['alpha_s']] * len(df_forecast),
-        'alpha_b': [w['alpha_b']] * len(df_forecast),
-        'alpha_cash': [w['alpha_cash']] * len(df_forecast)
-    }, index=df_forecast.index)
-
-
-data_dir = os.path.join(base_dir, "Data")
-output_file = os.path.join(data_dir, "weights_output.xlsx")
-with pd.ExcelWriter(output_file) as writer:
-    alphas_dyn[2].to_excel(writer, sheet_name="dynamic_lambda2")
-    alphas_dyn[10].to_excel(writer, sheet_name="dynamic_lambda10")
-    static_df[2].to_excel(writer, sheet_name="static_lambda2")
-    static_df[10].to_excel(writer, sheet_name="static_lambda10")
-    
     
 ###############################################################################
 # PART 4: COMPUTING THE VaR OF A PORTFOLIO
