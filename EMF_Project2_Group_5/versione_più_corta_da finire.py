@@ -1248,8 +1248,8 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
     N = block_size
     q99_z_hat = loc + (scale_gev / -shape) * ((-N * np.log(0.99))**(shape) - 1)
     # or - data-based (non-parametric quantile estimator)
-    #tail_prob = 1 - 0.99**(1/60)
-    #qq99_z_hat = np.quantile(z_hat.dropna(), 1 - tail_prob) 
+    tail_prob = 1 - 0.99**(1/60)
+    qq99_z_hat = np.quantile(z_hat.dropna(), 1 - tail_prob) 
 
     q99_results_dfLp[name] = {
         '99% quantile of maxima m_τ': q99_m,
@@ -1259,7 +1259,7 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
     # PROVA da non usare !
     qq99_results_dfLp[name] = {
         '99% quantile of maxima m_τ': qq99_m,
-        #'99% quantile of z_hat': qq99_z_hat
+        '99% quantile of z_hat': qq99_z_hat
     }
     
     # PROVA
@@ -1320,7 +1320,9 @@ print(var_99_summary)
 print("\n=== Q4.3: GEV parameters ===\n")
 print(gev_params_df)
 print("\n=== Q4.4: GEV quantiles ===\n")
+print("Correct one:")
 print(q99_results_df)
+print("Wrong one, using data-based (non-parametric) quantile estimator:")
 print(qq99_results_df)
 
 print("\n=== Q4.5: Time evolution of 99% GEV VaR - look plot ===\n")
