@@ -1178,14 +1178,14 @@ print(df_q41)
 # PROBLEMS WITH THIS SECTION:
 # - CALCULATIONS OF CONDITIONAL QUARTILE IN Q4.2 AND ITS TEMPORAL EVOLUTION (HOW DO WE COMPUTE IT?)
 # - CALCULATIONS OF QUARTILE IN Q4.5 AND ITS TEMPORAL EVOLUTION (HOW DO WE COMPUTE IT?)
-    
+
 VaR_99 = {}          # Q4.2 Time evolution of 99% Conditional VaR (GARCH)
 gev_params_dfLp={}   # Q4.3 Parameters (ξ, ϖ, ψ)’ of the GEV 
 q99_results_dfLp={}  # Q4.4 Computed 99% quantile of m_τ distribution and Deduced 99% quantile of z_hat distribution
 VaR_99_GEV_dfLp = {} # Q4.5 Temporal evolution of the 99% GEV VaR 
 
 qq99_results_dfLp = {} # prova
-qqVaR_99_GEV_dfLp = {} # prova
+#qqVaR_99_GEV_dfLp = {} # prova
 
 
 print("\n=== Q4.2: AR(1)-GARCH(1,1) ===\n")
@@ -1221,7 +1221,9 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
     #mu = Lp.mean()
     #sigma = Lp.std()
     #z_hat = (Lp - mu) / sigma
-        
+    
+    
+    Lp = df_Lp[name]
     # Conditional standardized residuals
     z_hat = (Lp - mu_t) / sigma_t
         
@@ -1234,8 +1236,9 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
 
     # Estimate GEV parameters
     shape, loc, scale_gev = genextreme.fit(m_tau)
-    gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale_gev}
-
+    gev_params_dfLp[name] = {'shape (ξ)': -shape, 'location (ω)': loc, 'scale (ψ)': scale_gev}
+    
+     
     # Q4.4: Quantile of maxima
     q99_m = loc + (scale_gev / -shape) * ((-np.log(0.99))**(shape) - 1)
     # or
@@ -1243,26 +1246,26 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
 
     # Quantile of return distribution (standardized residuals) | 99% quantile of z_hat
     N = block_size
-    q99_z_hat = loc + (scale_gev / shape) * ((-N * np.log(0.99))**(-shape) - 1)
-    # or
-    tail_prob = 1 - 0.99**(1/60)
-    qq99_z_hat = np.quantile(z_hat, 1 - tail_prob) # approximation ???
+    q99_z_hat = loc + (scale_gev / -shape) * ((-N * np.log(0.99))**(shape) - 1)
+    # or - data-based (non-parametric quantile estimator)
+    #tail_prob = 1 - 0.99**(1/60)
+    #qq99_z_hat = np.quantile(z_hat.dropna(), 1 - tail_prob) 
 
     q99_results_dfLp[name] = {
         '99% quantile of maxima m_τ': q99_m,
         '99% quantile of z_hat': q99_z_hat
     }
     
-    # PROVA
+    # PROVA da non usare !
     qq99_results_dfLp[name] = {
         '99% quantile of maxima m_τ': qq99_m,
-        '99% quantile of z_hat': qq99_z_hat
+        #'99% quantile of z_hat': qq99_z_hat
     }
     
     # PROVA
-    qqVaR_99_GEV = mu_t + qq99_z_hat * sigma_t
-    qqVaR_99_GEV.name = f'qqVaR_99_GEV_{name}'
-    qqVaR_99_GEV_dfLp[name] = qqVaR_99_GEV
+    #qqVaR_99_GEV = mu_t + qq99_z_hat * sigma_t
+    #qqVaR_99_GEV.name = f'qqVaR_99_GEV_{name}'
+    #qqVaR_99_GEV_dfLp[name] = qqVaR_99_GEV
     
 
     # Q4.5: VaR from GEV quantile
@@ -1307,7 +1310,7 @@ var_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99_GEV_dfLp.i
 
 # PROVA
 qq99_results_df = pd.DataFrame(qq99_results_dfLp).T
-qqvar_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in qqVaR_99_GEV_dfLp.items()}).T[['mean', 'std', 'min', 'max']]
+#qqvar_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in qqVaR_99_GEV_dfLp.items()}).T[['mean', 'std', 'min', 'max']]
 
 
 
@@ -1322,7 +1325,7 @@ print(qq99_results_df)
 
 print("\n=== Q4.5: Time evolution of 99% GEV VaR - look plot ===\n")
 print(var_99_gev_summary)
-print(qqvar_99_gev_summary) 
+#print(qqvar_99_gev_summary) 
 
 
 import matplotlib.pyplot as plt 
