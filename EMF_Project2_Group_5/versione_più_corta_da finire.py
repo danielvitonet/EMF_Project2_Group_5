@@ -133,6 +133,7 @@ print(static_weights)
 # PART 2: ESTIMATION OF A GARCH MODEL
 ###############################################################################
 
+#df=df_weekly.copy()
 # -----------------------------------------------------------------------------
 # Q2.1: Non-normality (Lilliefors and K-S) and autocorrelation (Ljung-Box) on excess returns
 # -----------------------------------------------------------------------------
@@ -228,7 +229,7 @@ for name in ['ex_s','ex_b']:
     plt.tight_layout()
     plt.show()
     
-    
+from statsmodels.tsa.stattools import adfuller
 # -----------------------------------------------------------------------------
 # Q2.2: AR(1) on simple returns (Rs,t and Rb,t), extract residuals
 # -----------------------------------------------------------------------------
@@ -244,6 +245,8 @@ for name in ['r_s','r_b']:
     print(f"{name} AR(1) results:\n", ar1.summary(), "\n")
     residuals[name] = ar1.resid
     
+    print(adfuller(ar1.resid))
+    
     # Test for ARCH effects in the residuals up to lag 4
     lm_stat, lm_pvalue, f_stat, f_pvalue = het_arch(ar1.resid, nlags=4)
     print(f"  ARCH‐LM (χ²) stat  = {lm_stat:.3f}, p‐value = {lm_pvalue:.4f}", 
@@ -251,7 +254,7 @@ for name in ['r_s','r_b']:
     print(f"  ARCH‐LM (F‐test) stat = {f_stat:.3f}, p‐value = {f_pvalue:.4f}\n")
     # H₀: No ARCH effects (i.e. residuals’ variance is constant).
     # H₁: ARCH effects present (variance is time‐varying).
-
+    
 
 # -----------------------------------------------------------------------------
 # Q2.3: GARCH(1,1) on AR(1) residuals via MLE (arch_model)
@@ -664,8 +667,11 @@ else:
     print(f"Skipped: {output_file} already exists.")
 
 
+
 # --- CUMULATIVE RETURNS ---
 CR, static_CR = {}, {}
+non_log_CR, non_log_CR_static_CR = {}, {}
+#AAAnon_log_CR = {}
 for lam in [2, 10]:
     w_dyn = alphas_dyn[lam].copy()
     #Rf_dyn = df.loc[w_dyn.index, 'r_f']
@@ -685,14 +691,67 @@ for lam in [2, 10]:
     #)
     # USIAMO LA SEGUENTE...
     Rp_dyn = w_dyn['alpha_s'] * Rs + w_dyn['alpha_b'] * Rb + w_dyn['alpha_cash'] * Rf_dyn
-    #CR[lam] = np.exp(np.log(1 + Rp_dyn).cumsum()) # NON LOGARITMICA
+    #non_log_CR[lam] = np.exp(np.log(1 + Rp_dyn).cumsum()) # NON LOGARITMICA
+    non_log_CR[lam] = (1 + Rp_dyn).cumprod()
     CR[lam] = np.log(1 + Rp_dyn).cumsum()          # LOGARITMICA
+    #AAAnon_log_CR[lam] = ((1 + Rp_dyn).cumprod()) # NON LOGARITMICA
 
     w_stat = static_weights[lam]
     Rp_stat = w_stat['alpha_s'] * Rs + w_stat['alpha_b'] * Rb + w_stat['alpha_cash'] * Rf_dyn
-    #static_CR[lam] = np.exp(np.log(1 + Rp_stat).cumsum()) # NON LOGARITMICA
+    #non_log_CR_static_CR[lam] = np.exp(np.log(1 + Rp_stat).cumsum()) # NON LOGARITMICA
+    non_log_CR_static_CR[lam] = (1 + Rp_stat).cumprod() 
     static_CR[lam] = np.log(1 + Rp_stat).cumsum()          # LOGARITMICA
-    
+
+# PRINT Fial Cumulative (Log) Return
+print('\n=== Fial Cumulative Log Return in %: ===\n')
+print(f"Final Cumulative Log Return (in %) for dynamic λ=2: {(CR[2].iloc[-2]):.4%}")
+print(f"Final Cumulative Log Return (in %) for static λ=2: {(static_CR[2].iloc[-2]):.4%}")
+print(f"Final Cumulative Log Return (in %) for dynamic λ=2: {(CR[10].iloc[-2]):.4%}")
+print(f"Final Cumulative Log Return (in %) for static λ=2: {(static_CR[10].iloc[-2]):.4%}")
+print('\n=== Fial Cumulative Return in %: ===\n')
+print(f"Final Cumulative Return (in %) for dynamic λ=2: {(non_log_CR[2].iloc[-2]-1):.4%}")
+print(f"Final Cumulative Return (in %) for static λ=2: {(non_log_CR_static_CR[2].iloc[-2]-1):.4%}")
+print(f"Final Cumulative Return (in %) for dynamic λ=2: {(non_log_CR[10].iloc[-2]-1):.4%}")
+print(f"Final Cumulative Return (in %) for static λ=2: {(non_log_CR_static_CR[10].iloc[-2]-1):.4%}")
+
+
+
+# PRINT Annualized Cumulative Log Return both in % and not :
+print('\n=== Annualized Cumulative Log Return both in % and decimal: ===\n')
+print('in %:')
+print(f"Annualized Cumulative Log Return (in %) for dynamic λ=2: {(CR[2].iloc[-2] / 24):.4%}")
+print(f"Annualized Cumulative Log Return (in %) for static λ=2: {(static_CR[2].iloc[-2] / 24):.4%}")
+print(f"Annualized Cumulative Log Return (in %) for dynamic λ=10: {(CR[10].iloc[-2] / 24):.4%}")
+print(f"Annualized Cumulative Log Return (in %) for static λ=10: {(static_CR[10].iloc[-2] / 24):.4%}")
+print('in decimal:')
+print(f"Annualized Cumulative Log Return for dynamic λ=2: {(CR[2].iloc[-2] / 24)}")
+print(f"Annualized Cumulative Log Return for static λ=2: {(static_CR[2].iloc[-2] / 24)}")
+print(f"Annualized Cumulative Log Return for dynamic λ=10: {(CR[10].iloc[-2] / 24)}")
+print(f"Annualized Cumulative Log Return for static λ=10: {(static_CR[10].iloc[-2] / 24)}")
+
+# PRINT Annualized Cumulative Return both in % and not :
+print('\n=== Annualized Cumulative Return both in % and decimal: ===\n')
+print('in %:')
+print(f"Annualized Cumulative Return (in %) for dynamic λ=2: {((non_log_CR[2].iloc[-2]**(1/24)-1)):.4%}")
+print(f"Annualized Cumulative Return (in %) for static λ=2: {((non_log_CR_static_CR[2].iloc[-2]**(1/24)-1)):.4%}")
+print(f"Annualized Cumulative Return (in %) for dynamic λ=10: {((non_log_CR[10].iloc[-2]**(1/24)-1)):.4%}")
+print(f"Annualized Cumulative Return (in %) for static λ=10: {((non_log_CR_static_CR[10].iloc[-2]**(1/24)-1)):.4%}")
+print('in decimal:')
+print(f"Annualized Cumulative Return for dynamic λ=2: {((non_log_CR[2].iloc[-2]**(1/24)-1))}")
+print(f"Annualized Cumulative Return for static λ=2: {((non_log_CR_static_CR[2].iloc[-2]**(1/24)-1))}")
+print(f"Annualized Cumulative Return for dynamic λ=10: {((non_log_CR[10].iloc[-2]**(1/24)-1))}")
+print(f"Annualized Cumulative Return for static λ=10: {((non_log_CR_static_CR[10].iloc[-2]**(1/24)-1))}")
+# using 52/1250 instead of 1/24 - maybe more accurate
+print('in %:')
+print(f"Annualized Cumulative Return (in %) for dynamic λ=2: {((non_log_CR[2].iloc[-2]**(52/1250)-1)):.4%}")
+print(f"Annualized Cumulative Return (in %) for static λ=2: {((non_log_CR_static_CR[2].iloc[-2]**(52/1250)-1)):.4%}")
+print(f"Annualized Cumulative Return (in %) for dynamic λ=10: {((non_log_CR[10].iloc[-2]**(52/1250)-1)):.4%}")
+print(f"Annualized Cumulative Return (in %) for static λ=10: {((non_log_CR_static_CR[10].iloc[-2]**(52/1250)-1)):.4%}")
+print('in decimal:')
+print(f"Annualized Cumulative Return for dynamic λ=2: {((non_log_CR[2].iloc[-2]**(52/1250)-1))}")
+print(f"Annualized Cumulative Return for static λ=2: {((non_log_CR_static_CR[2].iloc[-2]**(52/1250)-1))}")
+print(f"Annualized Cumulative Return for dynamic λ=10: {((non_log_CR[10].iloc[-2]**(52/1250)-1))}")
+print(f"Annualized Cumulative Return for static λ=10: {((non_log_CR_static_CR[10].iloc[-2]**(52/1250)-1))}")
 
 # --- PLOT WEIGHTS ---
 #alphas_dyn[2].index = alphas_dyn[lam].index - pd.Timedelta(weeks=1)
@@ -766,33 +825,46 @@ for lam in [2, 10]:
 
 
 
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
+#for lam in [2, 10]:
+#    # pull out the constant static vector
+#    w_stat = static_df[lam].iloc[0]
+#    # dynamic DataFrame
+#    dyn = alphas_dyn[lam]
+#
+#    fig, ax = plt.subplots(figsize=(12, 4))
+#    # plot dynamic weights (dashed)
+#    ax.plot(dyn.index, dyn['alpha_s'], '--', label='Stock (dynamic)',  color='C0')
+#    ax.plot(dyn.index, dyn['alpha_b'], '--', label='Bond (dynamic)',   color='C1')
+#    ax.plot(dyn.index, dyn['alpha_cash'], '--', label='Cash (dynamic)', color='C2')
+#
+#    # plot static horizontals (solid)
+#    ax.axhline(w_stat['alpha_s'],   color='C0', label='Stock (static)')
+#    ax.axhline(w_stat['alpha_b'],   color='C1', label='Bond (static)')
+#    ax.axhline(w_stat['alpha_cash'],color='C2', label='Cash (static)')
+#
+#    ax.set_title(f"Dynamic vs Static Allocation (λ = {lam})")
+#    ax.set_ylabel("Weight")
+#    ax.set_xlabel("Date")
+#    ax.legend(ncol=3, loc='upper left')
+#    ax.grid(True)
+#    plt.tight_layout()
+#    plt.show()
 
-for lam in [2, 10]:
-    # pull out the constant static vector
-    w_stat = static_df[lam].iloc[0]
-    # dynamic DataFrame
-    dyn = alphas_dyn[lam]
 
-    fig, ax = plt.subplots(figsize=(12, 4))
-    # plot dynamic weights (dashed)
-    ax.plot(dyn.index, dyn['alpha_s'], '--', label='Stock (dynamic)',  color='C0')
-    ax.plot(dyn.index, dyn['alpha_b'], '--', label='Bond (dynamic)',   color='C1')
-    ax.plot(dyn.index, dyn['alpha_cash'], '--', label='Cash (dynamic)', color='C2')
-
-    # plot static horizontals (solid)
-    ax.axhline(w_stat['alpha_s'],   color='C0', label='Stock (static)')
-    ax.axhline(w_stat['alpha_b'],   color='C1', label='Bond (static)')
-    ax.axhline(w_stat['alpha_cash'],color='C2', label='Cash (static)')
-
-    ax.set_title(f"Dynamic vs Static Allocation (λ = {lam})")
-    ax.set_ylabel("Weight")
-    ax.set_xlabel("Date")
-    ax.legend(ncol=3, loc='upper left')
-    ax.grid(True)
-    plt.tight_layout()
-    plt.show()
-
+# --- PLOT CUMULATIVE RETURNS ---
+plt.figure(figsize=(12, 6))
+plt.plot(non_log_CR[2], label='λ = 2 (dynamic)', color='blue')
+plt.plot(non_log_CR[10], label='λ = 10 (dynamic)', color='green')
+plt.plot(non_log_CR_static_CR[2], '--', label='λ = 2 (static)', color='red', alpha=0.6)
+plt.plot(non_log_CR_static_CR[10], '--', label='λ = 10 (static)', color='orange', alpha=0.6)
+plt.title('Cumulative Log Return: Dynamic vs Static Portfolio Allocation')
+plt.xlabel('Date')
+plt.ylabel('Cumulative Log Return')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
 
 # --- PLOT CUMULATIVE RETURNS ---
 plt.figure(figsize=(12, 6))
@@ -800,13 +872,36 @@ plt.plot(CR[2], label='λ = 2 (dynamic)', color='blue')
 plt.plot(CR[10], label='λ = 10 (dynamic)', color='green')
 plt.plot(static_CR[2], '--', label='λ = 2 (static)', color='red', alpha=0.6)
 plt.plot(static_CR[10], '--', label='λ = 10 (static)', color='orange', alpha=0.6)
-plt.title('Cumulative Return: Dynamic vs Static Portfolio Allocation')
+plt.title('Cumulative Log Return: Dynamic vs Static Portfolio Allocation')
 plt.xlabel('Date')
-plt.ylabel('Cumulative Return')
+plt.ylabel('Cumulative Log Return')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+
+plt.figure(figsize=(12, 6))
+plt.plot(CR[2], label='λ = 2 (dynamic)', color='blue')
+plt.plot(static_CR[2], '--', label='λ = 2 (static)', color='red', alpha=0.6)
+plt.title('Cumulative Log Return: Dynamic vs Static Portfolio Allocation (λ = 2)')
+plt.xlabel('Date')
+plt.ylabel('Cumulative Log Return')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(12, 6))
+plt.plot(CR[10], label='λ = 10 (dynamic)', color='green')
+plt.plot(static_CR[10], '--', label='λ = 10 (static)', color='orange', alpha=0.6)
+plt.title('Cumulative Log Return: Dynamic vs Static Portfolio Allocation (λ = 10)')
+plt.xlabel('Date')
+plt.ylabel('Cumulative Log Return')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
 
 #delta_s = alphas_dyn[10]['alpha_s'].diff().abs()
 #delta_b = alphas_dyn[10]['alpha_b'].diff().abs()
@@ -860,14 +955,63 @@ for lam in [2, 10]:
         
 
         # Compare final wealth 
-        #if cum_log_dyn.iloc[-2] <= cum_log_stat.iloc[-2]:
-        if np.exp(cum_log_dyn.iloc[-2]) <= np.exp(cum_log_stat.iloc[-2]):
+        if cum_log_dyn.iloc[-2] <= cum_log_stat.iloc[-2]:
+        #if np.exp(cum_log_dyn.iloc[-2]) <= np.exp(cum_log_stat.iloc[-2]):
             break_even_f[lam] = f
             break
 
 # --- DISPLAY RESULTS ---
 for lam in [2, 10]:
-    print(f"Break-even transaction cost rate for λ = {lam}: f = {break_even_f[lam]:.4%}")
+    # a cost per unit of absolute change in portfolio weights, applied weekly based on the weekly turnover.
+    #print('\n=== Cost per unit of absolute change in portfolio weights: ===\n')
+    print(f"Break-even (unit) transaction cost rate for λ = {lam}: f = {break_even_f[lam]:.4%}")
+    #print('\n=== "Annualized" cost per unit of absolute change in portfolio weights: ===\n')
+    #print(f"'Annualized' break-even transaction cost rate for λ = {lam}: f = {(((1+break_even_f[lam])**52)-1):.4%}")
+
+def compute_turnover (weights_df, f):
+    """
+    Compute turnover based on absolute weight changes.
+    The cash weight is ignored (no cost for risk-free asset).
+    """
+    delta_s = weights_df['alpha_s'].diff().abs()
+    delta_b = weights_df['alpha_b'].diff().abs()
+    TU = (delta_s + delta_b)
+    return TU.fillna(0)
+
+for lam in [2, 10]:    
+    if lam == 10 :
+        weights = alphas_dyn[lam].copy()
+        Rf_dyn = df.loc[weights.index, 'r_f']
+        Rs = df.loc[weights.index, 'r_s'].shift(-1)
+        Rb = df.loc[weights.index, 'r_b'].shift(-1)
+        Rp_dyn = weights['alpha_s'] * Rs + weights['alpha_b'] * Rb + weights['alpha_cash'] * Rf_dyn
+        w_stat = static_weights[lam]
+        Rp_stat = w_stat['alpha_s'] * Rs + w_stat['alpha_b'] * Rb + w_stat['alpha_cash'] * Rf_dyn
+        f = break_even_f[lam]
+        TU = (compute_turnover(weights, f)).cumsum()
+        last_TU = TU.iloc[-1]
+        average_weekly_TU = last_TU / len(TU)
+        average_annual_TU = last_TU/ 24
+        TC = (compute_transaction_costs(weights, f)).cumsum()
+        last_TC = TC.iloc[-1]
+        average_weekly_TC = last_TC / len(TC)
+        average_annual_TC = last_TC/ 24
+        print('\n=== Summary for TC , Turnover, and f: ===\n')
+        # Total Turnover and Transaction Costs 
+        print(f"Total Turnover: {last_TU}")
+        print(f"Total Transaction Costs: {last_TC}")
+        # Annualized/Weekly cost impact
+        print(f"Average Annual Turn Over: {average_annual_TU}")
+        print(f"Average Annual Transaction cost: {average_annual_TC}")
+        print(f"Average Weekly Turn Over: {average_weekly_TU}")
+        print(f"Average Weekly Transaction cost: {average_weekly_TC}")
+        
+        #print(f"{((average_annual_TU)*f):.4%}")
+        #print(f"{(average_annual_TC):.4%}")
+        
+        print(f"Annualized cost impact from break-even transaction cost rate for λ = {lam} is {(((1+break_even_f[lam]*average_weekly_TU)**52)-1):.4%}")
+        print(f"Annualized cost impact from break-even transaction cost rate for λ = {lam} is {(((1+average_weekly_TC)**52)-1):.4%}")
+
 # NON FIDATEVI DEL Break-even transaction cost rate for λ = 2: f = 0.0510%
 # SPARA QUELLO SOLO PERCHE' E' IL MINIMO CHE HO MESSO. IN REALTA' NON ESISTE
 # PERCHE' E' NEGATIVO GIA' IN PARTENZA
@@ -1040,6 +1184,10 @@ gev_params_dfLp={}   # Q4.3 Parameters (ξ, ϖ, ψ)’ of the GEV
 q99_results_dfLp={}  # Q4.4 Computed 99% quantile of m_τ distribution and Deduced 99% quantile of z_hat distribution
 VaR_99_GEV_dfLp = {} # Q4.5 Temporal evolution of the 99% GEV VaR 
 
+qq99_results_dfLp = {} # prova
+qqVaR_99_GEV_dfLp = {} # prova
+
+
 print("\n=== Q4.2: AR(1)-GARCH(1,1) ===\n")
 garch_res_loss = {}
 for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
@@ -1053,9 +1201,9 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
     # Extract scale factor to adjust back to original units
     scale = res.scale
 
-    # Conditional mean: μ_t = a + ρ * L_{t-1}
+    # Conditional mean: μ_{t+1} = a + ρ * L_t
     params = res.params
-    a = params['Const'] /scale # SCALE OR NOT SCALE ???  CHECK CHECK CHECK !!!
+    a = params['Const'] /scale # UN-SCALE
     rho = params[f'{name}[1]']
     L_lagged = df_Lp[name].shift(1)
     mu_t = a + rho * L_lagged
@@ -1069,35 +1217,84 @@ for name in ['static_2', 'static_10', 'dynamic_2','dynamic_10']:
     
     ####### Q4.3 - Q4.4
 
-    Lp = df_Lp[name]
-    mu = Lp.mean()
-    sigma = Lp.std()
-    z_hat = (Lp - mu) / sigma
-
-    # Step 1: Divide into 60-day blocks and get maxima
+    #Lp = df_Lp[name]
+    #mu = Lp.mean()
+    #sigma = Lp.std()
+    #z_hat = (Lp - mu) / sigma
+        
+    # Conditional standardized residuals
+    z_hat = (Lp - mu_t) / sigma_t
+        
+    # Q4.3: GEV estimation
     block_size = 60
-    T = len(z_hat)
-    n_blocks = T // block_size
-    m_tau = [z_hat.iloc[i * block_size:(i + 1) * block_size].max() for i in range(n_blocks)]
+    T_valid = len(z_hat.dropna())
+    n_blocks = T_valid // block_size
+    m_tau = [z_hat.dropna().iloc[i * block_size:(i + 1) * block_size].max() for i in range(n_blocks)]
     m_tau = np.array(m_tau)
 
-    # Step 2: Fit GEV distribution #Q4.3
-    shape, loc, scale = genextreme.fit(m_tau)
-    gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
-    
-    # Q4.4
-    # Step 3: Compute 99% quantile of maxima distribution
-    q99_m = genextreme.ppf(0.99, shape, loc=loc, scale=scale)
-    # Step 4: Deduce 99% quantile of z_hat
-    tail_prob = 1 - 0.99**(1/60) # CONTROLLARE FORMULA DALLE SLIDES
-    q99_z_hat = np.quantile(z_hat, 1 - tail_prob)
-    #gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
-    q99_results_dfLp[name] = {'99% quantile of maxima m_τ': q99_m, '99% quantile of z_hat': q99_z_hat}
+    # Estimate GEV parameters
+    shape, loc, scale_gev = genextreme.fit(m_tau)
+    gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale_gev}
 
-    ### Q4.5 CREDO SIA IL 4.5, CONTROLLARE!!! 
+    # Q4.4: Quantile of maxima
+    q99_m = loc + (scale_gev / -shape) * ((-np.log(0.99))**(shape) - 1)
+    # or
+    qq99_m = genextreme.ppf(0.99, shape, loc=loc, scale=scale_gev)
+
+    # Quantile of return distribution (standardized residuals) | 99% quantile of z_hat
+    N = block_size
+    q99_z_hat = loc + (scale_gev / shape) * ((-N * np.log(0.99))**(-shape) - 1)
+    # or
+    tail_prob = 1 - 0.99**(1/60)
+    qq99_z_hat = np.quantile(z_hat, 1 - tail_prob) # approximation ???
+
+    q99_results_dfLp[name] = {
+        '99% quantile of maxima m_τ': q99_m,
+        '99% quantile of z_hat': q99_z_hat
+    }
+    
+    # PROVA
+    qq99_results_dfLp[name] = {
+        '99% quantile of maxima m_τ': qq99_m,
+        '99% quantile of z_hat': qq99_z_hat
+    }
+    
+    # PROVA
+    qqVaR_99_GEV = mu_t + qq99_z_hat * sigma_t
+    qqVaR_99_GEV.name = f'qqVaR_99_GEV_{name}'
+    qqVaR_99_GEV_dfLp[name] = qqVaR_99_GEV
+    
+
+    # Q4.5: VaR from GEV quantile
     VaR_99_GEV = mu_t + q99_z_hat * sigma_t
     VaR_99_GEV.name = f'VaR_99_GEV_{name}'
     VaR_99_GEV_dfLp[name] = VaR_99_GEV
+############################################
+    
+    # Step 1: Divide into 60-day blocks and get maxima
+    #block_size = 60
+    #T = len(z_hat)
+    #n_blocks = T // block_size
+    #m_tau = [z_hat.iloc[i * block_size:(i + 1) * block_size].max() for i in range(n_blocks)]
+    #m_tau = np.array(m_tau)
+
+    # Step 2: Fit GEV distribution #Q4.3
+    #shape, loc, scale = genextreme.fit(m_tau)
+    #gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
+    
+    # Q4.4
+    # Step 3: Compute 99% quantile of maxima distribution
+    #q99_m = genextreme.ppf(0.99, shape, loc=loc, scale=scale)
+    # Step 4: Deduce 99% quantile of z_hat
+    #tail_prob = 1 - 0.99**(1/60) # CONTROLLARE FORMULA DALLE SLIDES
+    #q99_z_hat = np.quantile(z_hat, 1 - tail_prob)
+    #gev_params_dfLp[name] = {'shape (ξ)': shape, 'location (ω)': loc, 'scale (ψ)': scale}
+    #q99_results_dfLp[name] = {'99% quantile of maxima m_τ': q99_m, '99% quantile of z_hat': q99_z_hat}
+
+    ### Q4.5 CREDO SIA IL 4.5, CONTROLLARE!!! 
+    #VaR_99_GEV = mu_t + q99_z_hat * sigma_t
+    #VaR_99_GEV.name = f'VaR_99_GEV_{name}'
+    #VaR_99_GEV_dfLp[name] = VaR_99_GEV
 
     # Return the head of the series
     #VaR_99_GEV.head()
@@ -1108,6 +1305,12 @@ q99_results_df = pd.DataFrame(q99_results_dfLp).T
 var_99_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99.items()}).T[['mean', 'std', 'min', 'max']]
 var_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in VaR_99_GEV_dfLp.items()}).T[['mean', 'std', 'min', 'max']]
 
+# PROVA
+qq99_results_df = pd.DataFrame(qq99_results_dfLp).T
+qqvar_99_gev_summary = pd.DataFrame({k: v.describe() for k, v in qqVaR_99_GEV_dfLp.items()}).T[['mean', 'std', 'min', 'max']]
+
+
+
 print("\n=== Q4.2: Time evolution of 99% Conditional (GARCH) VaR - look plot ===\n")
 print(var_99_summary)
 # Tables for Q4.3 & Q4.4 (GEV parameters and quantiles)
@@ -1115,13 +1318,14 @@ print("\n=== Q4.3: GEV parameters ===\n")
 print(gev_params_df)
 print("\n=== Q4.4: GEV quantiles ===\n")
 print(q99_results_df)
+print(qq99_results_df)
 
 print("\n=== Q4.5: Time evolution of 99% GEV VaR - look plot ===\n")
 print(var_99_gev_summary)
+print(qqvar_99_gev_summary) 
 
 
-
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt 
 
 # Setup
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -1137,8 +1341,8 @@ labels = {
 
 # Plot 1: GARCH VaR for λ=2
 plt.figure()
-plt.plot(VaR_99['static_2'], label='Static (λ=2)')
-plt.plot(VaR_99['dynamic_2'], label='Dynamic (λ=2)')
+plt.plot(VaR_99['dynamic_2'], label=labels['dynamic_2'], color='#ff7f0e')
+plt.plot(VaR_99['static_2'], label=labels['static_2'], color='#1f77b4')
 plt.title('Temporal Evolution of 99% VaR (GARCH) - λ=2')
 plt.xlabel('Date')
 plt.ylabel('VaR')
@@ -1148,8 +1352,8 @@ plt.show()
 
 # Plot 2: GARCH VaR for λ=10
 plt.figure()
-plt.plot(VaR_99['static_10'], label='Static (λ=10)')
-plt.plot(VaR_99['dynamic_10'], label='Dynamic (λ=10)')
+plt.plot(VaR_99['dynamic_10'], label=labels['dynamic_10'], color='#ff7f0e')
+plt.plot(VaR_99['static_10'], label=labels['static_10'], color='#1f77b4')
 plt.title('Temporal Evolution of 99% VaR (GARCH) - λ=10')
 plt.xlabel('Date')
 plt.ylabel('VaR')
@@ -1159,8 +1363,8 @@ plt.show()
 
 # Plot 3: GEV VaR for λ=2
 plt.figure()
-plt.plot(VaR_99_GEV_dfLp['static_2'], label='Static (λ=2)')
-plt.plot(VaR_99_GEV_dfLp['dynamic_2'], label='Dynamic (λ=2)')
+plt.plot(VaR_99_GEV_dfLp['dynamic_2'], label=labels['dynamic_2'], color='#ff7f0e')
+plt.plot(VaR_99_GEV_dfLp['static_2'], label=labels['static_2'], color='#1f77b4')
 plt.title('Temporal Evolution of 99% VaR (GEV) - λ=2')
 plt.xlabel('Date')
 plt.ylabel('VaR')
@@ -1170,14 +1374,78 @@ plt.show()
 
 # Plot 4: GEV VaR for λ=10
 plt.figure()
-plt.plot(VaR_99_GEV_dfLp['static_10'], label='Static (λ=10)')
-plt.plot(VaR_99_GEV_dfLp['dynamic_10'], label='Dynamic (λ=10)')
+plt.plot(VaR_99_GEV_dfLp['dynamic_10'], label=labels['dynamic_10'], color='#ff7f0e')
+plt.plot(VaR_99_GEV_dfLp['static_10'], label=labels['static_10'], color='#1f77b4')
 plt.title('Temporal Evolution of 99% VaR (GEV) - λ=10')
 plt.xlabel('Date')
 plt.ylabel('VaR')
 plt.legend()
 plt.tight_layout()
 plt.show()
+
+
+
+
+
+
+
+#import matplotlib.pyplot as plt
+#
+# Setup
+#plt.style.use('seaborn-v0_8-whitegrid')
+#plt.rcParams["figure.figsize"] = (14, 6)
+#
+## Dictionary for clean labels
+#labels = {
+#    'static_2': 'Static (λ=2)',
+#    'dynamic_2': 'Dynamic (λ=2)',
+#    'static_10': 'Static (λ=10)',
+#    'dynamic_10': 'Dynamic (λ=10)',
+#}
+#
+# Plot 1: GARCH VaR for λ=2
+#plt.figure()
+#plt.plot(VaR_99['dynamic_2'], label='Dynamic (λ=2)')
+#plt.plot(VaR_99['static_2'], label='Static (λ=2)')
+#plt.title('Temporal Evolution of 99% VaR (GARCH) - λ=2')
+#plt.xlabel('Date')
+#plt.ylabel('VaR')
+#plt.legend()
+#plt.tight_layout()
+#plt.show()
+#
+# Plot 2: GARCH VaR for λ=10
+#plt.figure()
+#plt.plot(VaR_99['dynamic_10'], label='Dynamic (λ=10)')
+#plt.plot(VaR_99['static_10'], label='Static (λ=10)')
+#plt.title('Temporal Evolution of 99% VaR (GARCH) - λ=10')
+#plt.xlabel('Date')
+#plt.ylabel('VaR')
+#plt.legend()
+#plt.tight_layout()
+#plt.show()
+#
+# Plot 3: GEV VaR for λ=2
+#plt.figure()
+#plt.plot(VaR_99_GEV_dfLp['dynamic_2'], label='Dynamic (λ=2)')
+#plt.plot(VaR_99_GEV_dfLp['static_2'], label='Static (λ=2)')
+#plt.title('Temporal Evolution of 99% VaR (GEV) - λ=2')
+#plt.xlabel('Date')
+#plt.ylabel('VaR')
+#plt.legend()
+#plt.tight_layout()
+#plt.show()
+#
+# Plot 4: GEV VaR for λ=10
+#plt.figure()
+#plt.plot(VaR_99_GEV_dfLp['dynamic_10'], label='Dynamic (λ=10)')
+#plt.plot(VaR_99_GEV_dfLp['static_10'], label='Static (λ=10)')
+#plt.title('Temporal Evolution of 99% VaR (GEV) - λ=10')
+#plt.xlabel('Date')
+#plt.ylabel('VaR')
+#plt.legend()
+#plt.tight_layout()
+#plt.show()
 
 # Setup for consistent visuals
 #sns.set(style="whitegrid")
